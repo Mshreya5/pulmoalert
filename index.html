@@ -412,8 +412,8 @@
     try {
       const res = await fetch(BASE + '/reset', { method: 'POST' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const obs = await res.json();
-      updateObs(obs);
+      const data = await res.json();
+      updateObs(data.observation ?? data);
       setActionBtnsDisabled(false);
     } catch (e) {
       alert('Reset failed: ' + e.message);
