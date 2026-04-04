@@ -1,0 +1,36 @@
+name: PulmoAlert
+version: 1.0.0
+description: "Healthcare oxygen cylinder and patient vitals monitoring environment with safety-focused RL agent actions."
+observation:
+  oxygen_level:
+    type: number
+    description: "Oxygen cylinder level percentage"
+    min: 0
+    max: 100
+  spo2:
+    type: number
+    description: "Patient blood oxygen saturation"
+    min: 0
+    max: 100
+  heart_rate:
+    type: number
+    description: "Patient heart rate in bpm"
+  consumption_rate:
+    type: number
+    description: "Oxygen consumption rate per time step"
+  time_step:
+    type: integer
+    description: "Simulation time step"
+  risk_level:
+    type: string
+    enum: [low, moderate, high, critical]
+action:
+  type: string
+  enum: [WAIT, ALERT_REFILL, EMERGENCY_ALERT, NOTIFY_CAREGIVER]
+reward:
+  min: -20
+  max: 10
+tasks:
+  - easy
+  - medium
+  - hard
