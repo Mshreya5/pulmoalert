@@ -1,11 +1,32 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from env.environment import PulmoAlertEnv
 from env.models import Action
 
 app = FastAPI(title="PulmoAlert API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 env = PulmoAlertEnv(task_name="easy")
+
+_INDEX = os.path.join(os.path.dirname(__file__), "..", "index.html")
+
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse(os.path.abspath(_INDEX))
 
 
 @app.post("/reset")

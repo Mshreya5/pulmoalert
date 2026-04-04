@@ -1,5 +1,5 @@
-openenv-core
-pydantic>=1.10.0
 fastapi
 uvicorn
+pydantic>=2.0.0
+aiofiles
 openai>=0.27.0
