@@ -1,3 +1,13 @@
+---
+title: PulmoAlert
+emoji: 🫁
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_file: server/app.py
+pinned: false
+---
+
 # PulmoAlert (OpenEnv)
 
 ## 🫁 Problem Description
@@ -119,3 +129,15 @@ Baseline run prints average reward and OpenEnv scores per difficulty.
 ## 🪪 Validations
 
 `openenv.yaml` provides metadata for OpenEnv validator requiring observation, action, reward ranges, and tasks.
+=======
+---
+title: Pulmoalert
+emoji: 📉
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+>>>>>>> 3bb332b58c0c48c51cbbab6ddb70b3e86b7c8f19
