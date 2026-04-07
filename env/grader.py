@@ -2,7 +2,6 @@ from typing import List, Dict
 
 
 def grade_episode(history: List[Dict]) -> float:
-    """Deterministic grade 0.0-1.0 from episode history."""
     if not history:
         return 0.0
 

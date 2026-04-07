@@ -1,8 +1,6 @@
 import random
 from typing import Tuple, Dict
 
-from pydantic import validate_arguments
-
 from env.models import Observation, Action, ActionType, Reward
 
 
@@ -67,7 +65,6 @@ class PulmoAlertEnv:
         if self.episode_over:
             return
 
-        # Oxygen consumption can vary with dynamic difficulty
         shift = self.rng.gauss(0, self.noise_scale * 0.2)
         self.consumption_rate = max(0.5, self.consumption_rate + shift * 0.2)
 
@@ -80,15 +77,12 @@ class PulmoAlertEnv:
         hr_shift = self.rng.gauss(0, self.noise_scale * 1.5)
         self.heart_rate = max(30.0, min(180.0, self.heart_rate + hr_shift))
 
-
-    @validate_arguments
     def reset(self) -> Observation:
         self._reset_vals()
         self.episode_over = False
         self.history = []
         return self.state()
 
-    @validate_arguments
     def step(self, action: Action) -> Tuple[Observation, Reward, bool, Dict]:
         if self.episode_over:
             raise RuntimeError("Step called after episode terminated")
@@ -102,7 +96,6 @@ class PulmoAlertEnv:
         is_critical = risk == "critical"
         is_high = risk in ("high", "critical")
 
-        # action interpretation
         if action.action == ActionType.WAIT:
             if is_high:
                 reward_value -= 3.0
@@ -115,7 +108,6 @@ class PulmoAlertEnv:
             if self.oxygen_level < 20.0:
                 reward_value += 2.5
                 reason = "Timely refill alert"
-                # Simulate management: refill reduces depletion by slowing consumption
                 self.consumption_rate = max(0.8, self.consumption_rate * 0.8)
             elif self.oxygen_level > 40.0:
                 reward_value -= 2.0
@@ -147,7 +139,6 @@ class PulmoAlertEnv:
         # Progress time and physiology after action.
         self._apply_physiology()
 
-        # auto event checking
         if self.oxygen_level <= 0.0:
             reward_value -= 20.0
             reason = "Oxygen depletion failure"
@@ -171,7 +162,6 @@ class PulmoAlertEnv:
 
         r = Reward(value=round(reward_value, 3), reason=reason)
 
-        # Record history for grading and analysis.
         self.history.append({
             "observation": obs.dict(),
             "action": action.action.value,
@@ -182,7 +172,6 @@ class PulmoAlertEnv:
 
         return obs, r, done, info
 
-    @validate_arguments
     def state(self) -> Observation:
         return Observation(
             oxygen_level=round(self.oxygen_level, 3),

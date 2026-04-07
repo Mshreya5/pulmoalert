@@ -1,7 +1,4 @@
 import os
-import time
-import logging
-
 from env.tasks import list_tasks, get_task
 from env.models import Action, ActionType
 from env.grader import grade_run
@@ -10,9 +7,6 @@ try:
     import openai
 except ImportError:
     openai = None
-
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-logger = logging.getLogger("pulmoalert")
 
 
 def heuristic_policy(obs):
@@ -23,6 +17,44 @@ def heuristic_policy(obs):
     if obs.heart_rate < 55 or obs.heart_rate > 110:
         return Action(action=ActionType.NOTIFY_CAREGIVER)
     return Action(action=ActionType.WAIT)
+
+
+def run_task(task_name: str, max_steps: int = 120):
+    env = get_task(task_name)
+    history = []
+
+    print(f"[START] task={task_name}", flush=True)
+    obs = env.reset()
+
+    for step_number in range(1, max_steps + 1):
+        action = heuristic_policy(obs)
+        if openai is not None:
+            try:
+                ai_action = openai_policy(obs)
+                if ai_action is not None:
+                    action = ai_action
+            except Exception:
+                pass
+
+        obs, reward, done, info = env.step(action)
+        history.append({
+            "observation": obs.dict(),
+            "action": action.action.value,
+            "reward": reward.value,
+            "done": done,
+            "info": info,
+        })
+
+        print(f"[STEP] step={step_number} reward={reward.value:.3f}", flush=True)
+
+        if done:
+            break
+
+    scores = grade_run([history])
+    final_score = scores["average_score"]
+    total_steps = len(history)
+    print(f"[END] task={task_name} score={final_score:.4f} steps={total_steps}", flush=True)
+    return scores
 
 
 def openai_policy(obs):
@@ -62,60 +94,6 @@ def openai_policy(obs):
     return None
 
 
-def run_task(task_name: str, episodes: int = 20, max_steps: int = 120):
-    env = get_task(task_name)
-    episode_histories = []
-    total_reward = 0.0
-    logger.info("[START] task=%s episodes=%d", task_name, episodes)
-
-    for ep in range(episodes):
-        obs = env.reset()
-        ep_reward = 0.0
-        history = []
-        for step in range(max_steps):
-            action = heuristic_policy(obs)
-            if openai is not None:
-                ai_action = openai_policy(obs)
-                if ai_action is not None:
-                    action = ai_action
-            obs, r, done, info = env.step(action)
-            ep_reward += r.value
-            logger.info(
-                "[STEP] task=%s episode=%d step=%d action=%s reward=%.3f done=%s",
-                task_name,
-                ep + 1,
-                step + 1,
-                action.action.value,
-                r.value,
-                done,
-            )
-            history.append({
-                "observation": obs.model_dump(),
-                "action": action.action.value,
-                "reward": r.value,
-                "done": done,
-                "info": info,
-            })
-            if done:
-                break
-        total_reward += ep_reward
-        episode_histories.append(history)
-
-    scores = grade_run(episode_histories)
-    avg_reward = total_reward / episodes
-    logger.info(
-        "[END] task=%s avg_reward=%.3f avg_score=%.4f",
-        task_name,
-        avg_reward,
-        scores["average_score"],
-    )
-    return scores
-
-
 if __name__ == "__main__":
-    logger.info("[START] PulmoAlert inference run")
-    start = time.time()
-    results = {}
-    for task in list_tasks():
-        results[task] = run_task(task, episodes=12, max_steps=150)
-    logger.info("[END] PulmoAlert inference complete runtime=%.2fs", time.time() - start)
+    for task_name in list_tasks():
+        run_task(task_name)

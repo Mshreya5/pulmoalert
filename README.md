@@ -8,136 +8,128 @@ app_file: server/app.py
 pinned: false
 ---
 
-# PulmoAlert (OpenEnv)
+# PulmoAlert — OpenEnv Medical Monitoring RL Environment
 
-## 🫁 Problem Description
+Production-ready reinforcement learning environment for oxygen cylinder and patient vitals monitoring with multi-difficulty tasks and deterministic grading.
 
-PulmoAlert simulates real-world medical support: an AI agent monitors an oxygen cylinder and patient vitals in a homecare or field hospital scenario.
+## Overview
 
-The environment tracks:
-- Oxygen tank level (% remaining)
-- Patient SpO2
-- Heart rate
-- Oxygen consumption rate
-- Time progression
+PulmoAlert simulates real-world medical support scenarios where an AI agent monitors oxygen levels and patient vitals, making critical decisions to maintain safety while minimizing unnecessary alerts.
 
-Agent actions:
-- `WAIT`
-- `ALERT_REFILL`
-- `EMERGENCY_ALERT`
-- `NOTIFY_CAREGIVER`
+**Observation Space:**
+- `oxygen_level` (0–100): Oxygen cylinder percentage
+- `spo2` (0–100): Patient blood oxygen saturation
+- `heart_rate` (bpm): Patient heart rate
+- `consumption_rate` (%/step): Oxygen consumption rate
+- `time_step` (int): Simulation time step
+- `risk_level` (str): low, moderate, high, critical
 
-Objective: keep patient safe by avoiding oxygen depletion and emergencies while minimizing unnecessary alerts.
+**Action Space:**
+- `WAIT`: No intervention
+- `ALERT_REFILL`: Request oxygen refill
+- `EMERGENCY_ALERT`: Trigger emergency response
+- `NOTIFY_CAREGIVER`: Alert medical staff
 
-## 📊 Observation Space
+**Reward Function:**
+- Safe WAIT in low-risk: +1.0
+- WAIT under high-risk: -3.0
+- Timely refill alert: +2.5
+- Unnecessary early refill: -2.0
+- Correct emergency detection: +4.0
+- False emergency alert: -3.0
+- Oxygen depletion: -20.0 (critical failure)
 
-`Observation` model fields:
-- `oxygen_level`: 0–100
-- `spo2`: 0–100
-- `heart_rate`: bpm
-- `consumption_rate`: % per step
-- `time_step`: integer
-- `risk_level`: one of `low`, `moderate`, `high`, `critical`
+## Tasks
 
-## 🎯 Action Space
+Three difficulty levels with increasing complexity:
 
-`Action` model can be one of:
-- `WAIT`
-- `ALERT_REFILL`
-- `EMERGENCY_ALERT`
-- `NOTIFY_CAREGIVER`
+| Task | Oxygen Range | Consumption | Noise | Objective |
+|------|--------------|-------------|-------|-----------|
+| easy | 70–100% | 0.8–1.5%/step | low | Stable management |
+| medium | 55–90% | 1.5–2.8%/step | medium | Balancing alerts |
+| hard | 40–80% | 2.5–4.5%/step | high | Critical response |
 
-## 🧮 Reward Design
+## Running Inference
 
-Dense per-step reward with penalties and incentives:
-- safe waits in low risk;+1
-- waiting in high risk;-3
-- timely refill when oxygen<20;+2.5
-- early unnecessary refill;-2
-- correct emergency response;+4
-- false emergency;-3
-- caregiver notification in high risk;+1.5
-- oxygen depletion failure;-20
-- emergency termination bonus +1
+```bash
+cd pulmoalert-openenv
+python inference.py
+```
 
-## 🧪 Tasks
+**Output Format:**
+```text
+[START] task=easy
+[STEP] step=1 reward=1.000
+[STEP] step=2 reward=0.500
+[END] task=easy score=0.9375 steps=104
+[START] task=medium
+[STEP] step=1 reward=1.000
+...
+[END] task=medium score=0.9375 steps=56
+[START] task=hard
+...
+[END] task=hard score=0.7651 steps=29
+```
 
-Three tasks increase difficulty by initial conditions and noise:
-
-- `easy`:
-  - Stable vitals
-  - Low consumption
-  - Goal: refill before oxygen <20
-
-- `medium`:
-  - Moderate fluctuation and consumption
-  - Balances safety vs unnecessary alerts
-
-- `hard`:
-  - High volatility in vitals
-  - Critical emergency detection required
-
-## 🧩 Project Structure
+## Project Structure
 
 ```
 pulmoalert-openenv/
 ├── env/
-│   ├── environment.py
-│   ├── models.py
-│   ├── tasks.py
-│   ├── grader.py
-├── openenv.yaml
-├── baseline.py
-├── requirements.txt
-├── Dockerfile
-├── README.md
+│   ├── environment.py      # PulmoAlertEnv class
+│   ├── models.py           # Pydantic data models
+│   ├── tasks.py            # Task factory
+│   ├── grader.py           # Episode grading
+├── inference.py            # Evaluator script
+├── server/
+│   ├── app.py              # FastAPI server
+│   └── __init__.py
+├── index.html              # Dashboard frontend
+├── pyproject.toml          # Package metadata
+├── requirements.txt        # Dependencies
+├── openenv.yaml            # OpenEnv specification
+├── Dockerfile              # Container config
+└── README.md               # This file
 ```
 
-## ▶️ Quick Start (Local)
+## Installation
 
 ```bash
-cd pulmoalert-openenv
-python -m pip install -r requirements.txt
-python baseline.py
+pip install -r requirements.txt
 ```
 
-## 🐳 Docker
+**Requirements:**
+- pydantic>=1.10.0
+- fastapi
+- uvicorn
+- openai>=0.27.0
+- openenv-core
+
+## Grading
+
+Deterministic evaluation (0.0–1.0):
+- **Safety** (50%): No oxygen depletion
+- **Emergency Precision** (25%): Correct vs false alerts
+- **Efficiency** (25%): Minimize unnecessary alerts
+
+## OpenEnv Compliance
+
+✓ Full OpenEnv multi-mode deployment support  
+✓ Validated with `openenv validate`  
+✓ Dockerized for Hugging Face Spaces  
+✓ Structured stdout output for evaluators  
+
+## Dashboard
+
+Optional FastAPI dashboard for interactive testing:
 
 ```bash
-docker build -t pulmoalert-openenv .
-docker run --rm pulmoalert-openenv
+python -m uvicorn server.app:app --host 0.0.0.0 --port 8080
 ```
 
-## 🤖 OpenAI Policy
+Access at: http://localhost:8080
 
-If `OPENAI_API_KEY` is set, `baseline.py` runs a GPT-guided policy fallback each step; otherwise uses deterministic heuristic.
+## References
 
-## 🧾 Grade Evaluation
-
-`env/grader.py` exposes:
-- `grade_episode(history)` returns 0.0–1.0
-- `grade_run(episodes)` returns average score
-
-Safety, correct alerts, and efficiency are measured.
-
-## 📌 Baseline Scores
-
-Baseline run prints average reward and OpenEnv scores per difficulty.
-
----
-
-## 🪪 Validations
-
-`openenv.yaml` provides metadata for OpenEnv validator requiring observation, action, reward ranges, and tasks.
-=======
----
-title: Pulmoalert
-emoji: 📉
-colorFrom: green
-colorTo: blue
-sdk: docker
-pinned: false
----
-
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
->>>>>>> 3bb332b58c0c48c51cbbab6ddb70b3e86b7c8f19
+- [OpenEnv Documentation](https://github.com/openenvhub/openenv)
+- [Hugging Face Spaces Config](https://huggingface.co/docs/hub/spaces-config-reference)
