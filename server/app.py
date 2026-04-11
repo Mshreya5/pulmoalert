@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from env.environment import PulmoAlertEnv
 from env.models import Action
@@ -41,15 +42,15 @@ def _get_session(session_id: str) -> PulmoAlertEnv:
     return env
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def root():
+    if os.path.exists(_INDEX):
+        return FileResponse(_INDEX)
     return {
         "name": "PulmoAlert",
         "version": "2.0.0",
         "description": "ICU oxygen monitoring OpenEnv",
         "tasks": list_tasks(),
-        "docs": "/docs",
-        "health": "/health",
     }
 
 
@@ -77,7 +78,9 @@ def reset(
     env = PulmoAlertEnv(task_name=task, seed=seed)
     obs = env.reset()
     _sessions[session_id] = env
-    return {"session_id": session_id, "observation": obs.dict()}
+    obs_dict = obs.dict()
+    obs_dict["time_step"] = obs_dict["time_elapsed"]
+    return {"session_id": session_id, "observation": obs_dict}
 
 
 @app.get("/state")
@@ -86,19 +89,34 @@ def get_state(session_id: str = Query(...)):
     return {"observation": env.state().dict()}
 
 
+class StepRequest(BaseModel):
+    action: str
+    session_id: str = ""
+
+
 @app.post("/step")
-def step(action: Action, session_id: str = Query(...)):
-    env = _get_session(session_id)
+def step(
+    body: StepRequest,
+    session_id: str = Query(default=""),
+):
+    sid = session_id or body.session_id
+    if not sid:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    env = _get_session(sid)
+    action = Action(action=body.action)
     try:
         obs, reward, done, info = env.step(action)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     if done:
-        _sessions.pop(session_id, None)
+        _sessions.pop(sid, None)
 
+    obs_dict = obs.dict()
+    obs_dict["time_step"] = obs_dict["time_elapsed"]
     return {
-        "observation": obs.dict(),
+        "observation": obs_dict,
         "reward": reward.dict(),
         "done": done,
         "info": info,
@@ -131,11 +149,14 @@ def delete_session(session_id: str = Query(...)):
     return {"deleted": session_id}
 
 
-@app.get("/ui", include_in_schema=False)
-def serve_ui():
-    if os.path.exists(_INDEX):
-        return FileResponse(_INDEX)
-    return {"detail": "No UI available"}
+@app.get("/info")
+def info():
+    return {
+        "name": "PulmoAlert",
+        "version": "2.0.0",
+        "description": "ICU oxygen monitoring OpenEnv",
+        "tasks": list_tasks(),
+    }
 
 
 def main():

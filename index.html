@@ -330,6 +330,7 @@
   const BASE = 'https://mshreya5-pulmoalert.hf.space';
   const ACTION_BTNS = ['WAIT','ALERT_REFILL','EMERGENCY_ALERT','NOTIFY_CAREGIVER'];
   let stepCount = 0;
+  let sessionId = null;
 
   /* ── helpers ── */
   function setLoading(on) {
@@ -406,6 +407,7 @@
     setLoading(true);
     document.getElementById('episodeBanner').classList.remove('show');
     stepCount = 0;
+    sessionId = null;
     document.getElementById('logList').innerHTML = '<div class="log-empty">Episode started</div>';
     updateReward(null, null);
 
@@ -413,6 +415,7 @@
       const res = await fetch(BASE + '/reset', { method: 'POST' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
+      sessionId = data.session_id;
       updateObs(data.observation ?? data);
       setActionBtnsDisabled(false);
     } catch (e) {
@@ -429,12 +432,11 @@
       const res = await fetch(BASE + '/step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action })
+        body: JSON.stringify({ action, session_id: sessionId })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
 
-      // Backend returns { observation, reward, done } or flat fields — handle both
       const obs    = data.observation ?? data;
       const reward = data.reward?.value ?? data.reward ?? 0;
       const done   = data.done ?? false;
