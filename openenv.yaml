@@ -1,36 +1,104 @@
 name: PulmoAlert
-version: 1.0.0
-description: "Healthcare oxygen cylinder and patient vitals monitoring environment with safety-focused RL agent actions."
-observation:
-  oxygen_level:
-    type: number
-    description: "Oxygen cylinder level percentage"
-    min: 0
-    max: 100
-  spo2:
-    type: number
-    description: "Patient blood oxygen saturation"
-    min: 0
-    max: 100
-  heart_rate:
-    type: number
-    description: "Patient heart rate in bpm"
-  consumption_rate:
-    type: number
-    description: "Oxygen consumption rate per time step"
-  time_step:
-    type: integer
-    description: "Simulation time step"
-  risk_level:
-    type: string
-    enum: [low, moderate, high, critical]
-action:
+version: "2.0.0"
+description: >
+  Production-grade OpenEnv for ICU oxygen monitoring.
+  An RL agent manages patient safety by deciding when to wait,
+  request a cylinder refill, notify a caregiver, or trigger an
+  emergency alert — based on live patient vitals.
+
+entry_point: inference.py
+
+server:
+  command: "uvicorn server.app:app --host 0.0.0.0 --port 7860"
+  port: 7860
+
+observation_space:
+  type: object
+  properties:
+    oxygen_level:
+      type: number
+      min: 0.0
+      max: 100.0
+      description: "Oxygen cylinder fill level (%)"
+    spo2:
+      type: number
+      min: 70.0
+      max: 100.0
+      description: "Blood oxygen saturation (%)"
+    heart_rate:
+      type: number
+      min: 30.0
+      max: 200.0
+      description: "Heart rate (bpm)"
+    respiratory_rate:
+      type: number
+      min: 5.0
+      max: 60.0
+      description: "Breaths per minute"
+    consumption_rate:
+      type: number
+      min: 0.0
+      description: "O2 consumed per time step"
+    spo2_trend:
+      type: integer
+      enum: [-1, 0, 1]
+      description: "SpO2 direction: -1 falling, 0 stable, +1 rising"
+    time_elapsed:
+      type: integer
+      min: 0
+      description: "Steps elapsed in current episode"
+    risk_level:
+      type: string
+      enum: [low, moderate, high, critical]
+      description: "Derived composite risk label"
+    predicted_depletion_time:
+      type: number
+      description: "Estimated steps until O2 reaches zero"
+
+action_space:
   type: string
-  enum: [WAIT, ALERT_REFILL, EMERGENCY_ALERT, NOTIFY_CAREGIVER]
+  enum:
+    - WAIT
+    - ALERT_REFILL
+    - EMERGENCY_ALERT
+    - NOTIFY_CAREGIVER
+  descriptions:
+    WAIT: "Do nothing; monitor passively"
+    ALERT_REFILL: "Request a cylinder refill"
+    EMERGENCY_ALERT: "Trigger full emergency response"
+    NOTIFY_CAREGIVER: "Notify attending caregiver"
+
 reward:
-  min: -20
-  max: 10
+  min: -7.0
+  max: 1.95
+  description: >
+    Shaped reward encouraging timely, proportionate responses.
+    Penalises false alarms, dangerous inaction, and O2 depletion.
+
 tasks:
-  - easy
-  - medium
-  - hard
+  - name: easy
+    description: >
+      Stable patient. High starting O2, slow consumption, minimal
+      fluctuations. No emergencies. Suitable for policy warm-up.
+    max_steps: 60
+
+  - name: medium
+    description: >
+      Moderate scenario. Occasional SpO2 dips, faster consumption,
+      and rare deterioration events. Requires balanced decisions.
+    max_steps: 80
+
+  - name: hard
+    description: >
+      ICU-like scenario. Low starting O2, high consumption, frequent
+      deterioration, sudden SpO2 crashes, and random arrhythmias.
+      Delayed consequences and high penalty for inaction.
+    max_steps: 100
+
+grader:
+  method: weighted_correct_decisions
+  output_range: [0.0, 1.0]
+  description: >
+    Score = sum(weighted correct decisions) / max_possible.
+    Weights scale with risk severity (critical=2.0, high=1.5,
+    moderate=1.0, low=0.5). False alarms subtract 1.0 point each.

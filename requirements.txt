@@ -1,5 +1,6 @@
-fastapi
-uvicorn
-pydantic>=2.0.0
-aiofiles
-openai>=0.27.0
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic>=1.10.16,<2.0.0
+aiofiles==23.2.1
+openai>=1.0.0
+pyyaml>=6.0

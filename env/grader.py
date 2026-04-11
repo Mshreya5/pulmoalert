@@ -1,54 +1,102 @@
 from typing import List, Dict
 
+from env.models import EpisodeSummary, StepRecord
 
-def grade_episode(history: List[Dict]) -> float:
+
+_WEIGHTS = {"critical": 2.0, "high": 1.5, "moderate": 1.0, "low": 0.5}
+_MAX_WEIGHT = 2.0
+
+
+def grade_episode(history: List[StepRecord], task: str = "unknown") -> EpisodeSummary:
     if not history:
-        return 0.0
+        return EpisodeSummary(
+            task=task, total_steps=0, score=0.0,
+            total_reward=0.0, false_alarms=0,
+            critical_misses=0, oxygen_depletions=0,
+        )
 
     total_steps = len(history)
-    oxygen_depleted = any(h["observation"]["oxygen_level"] <= 0.0 for h in history)
-    if oxygen_depleted:
-        safety = 0.0
-    else:
-        safety = 1.0
+    total_possible = total_steps * _MAX_WEIGHT
+    earned = 0.0
+    total_reward = 0.0
+    false_alarms = 0
+    critical_misses = 0
+    oxygen_depletions = 0
 
-    correct_emergency = 0
-    false_emergency = 0
-    proactive_refill = 0
-    unnecessary_alerts = 0
+    for record in history:
+        obs = record.observation if isinstance(record, StepRecord) else _dict_to_obs(record)
+        action = record.action if isinstance(record, StepRecord) else record["action"]
+        risk = record.risk if isinstance(record, StepRecord) else record.get("info", {}).get("risk", "low")
+        reward = record.reward if isinstance(record, StepRecord) else record["reward"]
+        done = record.done if isinstance(record, StepRecord) else record["done"]
 
-    for h in history:
-        obs = h["observation"]
-        action = h["action"]
-        risk = obs.get("risk_level", "low")
+        oxygen = obs.oxygen_level if hasattr(obs, "oxygen_level") else obs.get("oxygen_level", 100.0)
+        spo2 = obs.spo2 if hasattr(obs, "spo2") else obs.get("spo2", 100.0)
+        hr = obs.heart_rate if hasattr(obs, "heart_rate") else obs.get("heart_rate", 80.0)
+        rr = obs.respiratory_rate if hasattr(obs, "respiratory_rate") else obs.get("respiratory_rate", 16.0)
 
-        if action == "EMERGENCY_ALERT":
-            if risk == "critical":
-                correct_emergency += 1
-            else:
-                false_emergency += 1
+        weight = _WEIGHTS.get(risk, 0.5)
+        total_reward += reward
 
-        if action == "ALERT_REFILL":
-            if obs["oxygen_level"] < 25:
-                proactive_refill += 1
-            else:
-                unnecessary_alerts += 1
+        if _is_correct(action, risk, oxygen, spo2, hr, rr):
+            earned += weight
+        if _is_false_alarm(action, risk, oxygen):
+            earned -= 1.0
+            false_alarms += 1
+        if action == "WAIT" and risk == "critical":
+            critical_misses += 1
+        if done and oxygen <= 0.0:
+            oxygen_depletions += 1
 
-        if action == "NOTIFY_CAREGIVER" and risk == "low":
-            unnecessary_alerts += 1
-
-    emergency_precision = correct_emergency / (correct_emergency + false_emergency + 1e-8)
-    emergency_recall = correct_emergency / max(1, 1 + int(any(h["observation"]["risk_level"] == "critical" for h in history)))
-    emergency_score = (emergency_precision + emergency_recall) / 2.0
-
-    refill_efficiency = max(0.0, 1.0 - unnecessary_alerts / max(1, total_steps * 0.25))
-    alert_efficiency = max(0.0, 1.0 - (false_emergency + unnecessary_alerts) / max(1, total_steps * 0.2))
-
-    score = 0.5 * safety + 0.25 * emergency_score + 0.25 * min(refill_efficiency, alert_efficiency)
-    return round(max(0.0, min(1.0, score)), 4)
+    score = earned / total_possible
+    return EpisodeSummary(
+        task=task,
+        total_steps=total_steps,
+        score=round(max(0.0, min(1.0, score)), 4),
+        total_reward=round(total_reward, 3),
+        false_alarms=false_alarms,
+        critical_misses=critical_misses,
+        oxygen_depletions=oxygen_depletions,
+    )
 
 
-def grade_run(episodes: List[List[Dict]]) -> Dict[str, float]:
-    scores = [grade_episode(ep) for ep in episodes]
+def grade_run(episodes: List, task_names: List[str] = None) -> Dict:
+    names = task_names or ["unknown"] * len(episodes)
+    summaries = [grade_episode(ep, task=n) for ep, n in zip(episodes, names)]
+    scores = [s.score for s in summaries]
     avg = sum(scores) / max(1, len(scores))
-    return {"average_score": round(avg, 4), "episode_scores": scores}
+    return {
+        "average_score": round(avg, 4),
+        "episode_scores": scores,
+        "summaries": [s.dict() for s in summaries],
+    }
+
+
+def _is_correct(action: str, risk: str, oxygen: float, spo2: float,
+                hr: float, rr: float) -> bool:
+    if risk == "critical":
+        return action in ("EMERGENCY_ALERT", "NOTIFY_CAREGIVER")
+    if risk == "high":
+        return action in ("ALERT_REFILL", "EMERGENCY_ALERT", "NOTIFY_CAREGIVER")
+    if oxygen < 25:
+        return action == "ALERT_REFILL"
+    if spo2 < 92 or hr > 110 or hr < 55 or rr > 25:
+        return action in ("NOTIFY_CAREGIVER", "ALERT_REFILL")
+    return action == "WAIT"
+
+
+def _is_false_alarm(action: str, risk: str, oxygen: float) -> bool:
+    if action == "EMERGENCY_ALERT" and risk not in ("critical", "high"):
+        return True
+    if action == "ALERT_REFILL" and oxygen >= 40 and risk == "low":
+        return True
+    return False
+
+
+def _dict_to_obs(record: dict):
+    class _Obs:
+        pass
+    o = _Obs()
+    for k, v in record.get("observation", {}).items():
+        setattr(o, k, v)
+    return o
