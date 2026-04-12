@@ -54,6 +54,14 @@ observation_space:
     predicted_depletion_time:
       type: number
       description: "Estimated steps until O2 reaches zero"
+    refill_arriving_in:
+      type: integer
+      min: 0
+      description: "Steps until ordered refill arrives (0 = none ordered)"
+    patient_type:
+      type: string
+      enum: [post_surgery, copd, icu_critical]
+      description: "Clinical patient profile driving baseline vitals"
 
 action_space:
   type: string

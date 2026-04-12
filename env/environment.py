@@ -15,6 +15,8 @@ TASK_CONFIG: Dict[str, Dict[str, Any]] = {
         "noise_scale": 0.3,
         "deterioration_prob": 0.02,
         "emergency_prob": 0.0,
+        "refill_delay": 3,
+        "patient_type": "post_surgery",
         "max_steps": 60,
     },
     "medium": {
@@ -26,6 +28,8 @@ TASK_CONFIG: Dict[str, Dict[str, Any]] = {
         "noise_scale": 0.9,
         "deterioration_prob": 0.08,
         "emergency_prob": 0.03,
+        "refill_delay": 5,
+        "patient_type": "copd",
         "max_steps": 80,
     },
     "hard": {
@@ -37,6 +41,8 @@ TASK_CONFIG: Dict[str, Dict[str, Any]] = {
         "noise_scale": 1.8,
         "deterioration_prob": 0.18,
         "emergency_prob": 0.10,
+        "refill_delay": 8,
+        "patient_type": "icu_critical",
         "max_steps": 100,
     },
 }
@@ -67,6 +73,7 @@ class PulmoAlertEnv:
         self.history: list = []
         self._deterioration_timer: int = 0
         self._spo2_window: deque = deque([self.spo2] * 3, maxlen=3)
+        self._refill_countdown: int = 0
 
     def _risk_level(self) -> str:
         if self.oxygen_level <= 10 or self.spo2 <= 87:
@@ -146,6 +153,8 @@ class PulmoAlertEnv:
 
         if action_type == ActionType.ALERT_REFILL:
             cost = -0.05
+            if self._refill_countdown > 0:
+                return cost - 0.4, "Refill already ordered — duplicate alert"
             if is_critical and oxygen_low:
                 return cost + 1.8, "Critical + low O2: timely refill alert"
             if is_high and oxygen_low:
@@ -194,13 +203,14 @@ class PulmoAlertEnv:
         risk = self._risk_level()
         reward_value, reason = self._compute_reward(action_type, risk)
 
-        if action_type == ActionType.ALERT_REFILL:
-            if self.oxygen_level < 10:
-                self.consumption_rate *= 0.60
-            elif self.oxygen_level < 25:
-                self.consumption_rate *= 0.75
-            elif self.oxygen_level < 40:
-                self.consumption_rate *= 0.90
+        if action_type == ActionType.ALERT_REFILL and self._refill_countdown == 0:
+            self._refill_countdown = self._cfg["refill_delay"]
+
+        if self._refill_countdown > 0:
+            self._refill_countdown -= 1
+            if self._refill_countdown == 0:
+                refill_amount = self.rng.uniform(40.0, 60.0)
+                self.oxygen_level = min(100.0, self.oxygen_level + refill_amount)
 
         self._apply_physiology()
 
@@ -230,6 +240,8 @@ class PulmoAlertEnv:
             "spo2_trend": self._spo2_trend(),
             "respiratory_rate": round(self.respiratory_rate, 1),
             "deterioration_active": self._deterioration_timer > 0,
+            "refill_arriving_in": self._refill_countdown,
+            "patient_type": self._cfg["patient_type"],
         }
 
     def state(self) -> Observation:
@@ -244,4 +256,6 @@ class PulmoAlertEnv:
             risk_level=self._risk_level(),
             predicted_depletion_time=round(predicted_depletion, 2),
             spo2_trend=self._spo2_trend(),
+            refill_arriving_in=self._refill_countdown,
+            patient_type=self._cfg["patient_type"],
         )

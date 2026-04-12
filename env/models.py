@@ -20,6 +20,8 @@ class Observation(BaseModel):
     spo2_trend: int = Field(..., ge=-1, le=1, description="SpO2 direction: -1 falling, 0 stable, +1 rising")
     time_elapsed: int = Field(..., ge=0, description="Steps elapsed in episode")
     risk_level: str = Field(..., description="Derived risk: low | moderate | high | critical")
+    refill_arriving_in: int = Field(default=0, ge=0, description="Steps until refill arrives (0 = not ordered)")
+    patient_type: str = Field(default="unknown", description="Patient clinical profile")
 
     class Config:
         use_enum_values = True
